@@ -8,5 +8,8 @@
   "devDependencies": {
     "typescript": "^3.9.7"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "vue": "^3.2.22"
+  }
 }

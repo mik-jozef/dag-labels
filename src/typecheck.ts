@@ -27,19 +27,25 @@ function getBasicType(value: unknown): BasicType {
 
 export class ValidationError {
   constructor(
-    public path: (string | number)[],
+    public path: (string | number)[] | null,
     public expected: string,
     public got: unknown,
   ) {}
   
   shift(prop: string | number) {
+    if (this.path === null) throw new Error(`Cannot unshift null with "${prop}".`);
+    
     this.path.unshift(prop);
     
     return this;
   }
   
   toString() {
-    return "TODO ValidationError.toString";
+    let strStart = this.path
+      ? "In " + this.path.join(".") + ", expected "
+      : "Expected ";
+    
+    return strStart + this.expected + ", but got " + this.got + ".";
   }
 }
 
@@ -78,10 +84,20 @@ export class RNull extends ValidatorCase {
 export class RNumber extends ValidatorCase {
   fuckStructuralTypingOfClasses: "RNumber" = "RNumber";
   
+  constructor(
+    public customValidate: (value: number) => string | null = dummyValidator,
+  ) {
+    super();
+  }
+  
   validate(value: unknown): ValidationError | null {
-    return typeof value === "number"
-      ? null
-      : new ValidationError([], "number", value)
+    if (typeof value !== "number") return new ValidationError([], "number", value);
+    
+    const customError = this.customValidate(value);
+    
+    return customError !== null
+      ? new ValidationError([], customError, value)
+      : null
     ;
   }
 }

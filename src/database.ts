@@ -1,5 +1,5 @@
 import { ValidationError } from "./typecheck.js";
-import { DatabaseRaw, loadDatabase, saveDatabase } from "./db-import.js";
+import { DatabaseRaw, loadDatabase, saveDatabaseRaw } from "./db-import.js";
 
 
 export type LabelRaw = DatabaseRaw['labels'] extends (infer Label)[] ? Label : never;
@@ -64,7 +64,7 @@ export class Database {
   }
   
   save() {
-    saveDatabase(this);
+    saveDatabaseRaw(this.toRaw());
   }
   
   validateLabel(labelRaw: LabelRaw, labelToEdit: Label | null): ValidationError | null {
@@ -108,6 +108,12 @@ export class Database {
       if (origName !== label.name) {
         this.labels.delete(origName);
         this.labels.set(label.name, label);
+      }
+      
+      for (const anyLabel of this.labels.values()) {
+        if (anyLabel.ancestors.includes(label)) {
+          anyLabel.ancestors = [ ...new Set([ ...anyLabel.ancestors, ...label.ancestors ]) ];
+        }
       }
     } else {
       this.labels.set(

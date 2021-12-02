@@ -186,13 +186,26 @@ export function loadDatabase(db: Database) {
   db.error || importTexts(db, raw);
 }
 
-export function saveDatabase(db: Database) {
-  const history: Array<any> = JSON.parse(localStorage.getItem(localStorageHistoryKey)!);
-  const lastSaved = JSON.parse(localStorage.getItem(localStorageDbKey)!);
+function getDbAndHistory(): { history: any[], lastSaved: any } {
+  return {
+    history: JSON.parse(localStorage.getItem(localStorageHistoryKey)!),
+    lastSaved: JSON.parse(localStorage.getItem(localStorageDbKey)!),
+  };
+}
+
+export function saveDatabaseRaw(dbRaw: DatabaseRaw) {
+  const { history, lastSaved } = getDbAndHistory();
   
   history.unshift(lastSaved);
   maxHistory < history.length && (history.length = maxHistory);
   
   localStorage.setItem(localStorageHistoryKey, JSON.stringify(history));
-  localStorage.setItem(localStorageDbKey, JSON.stringify(db.toRaw()));
+  localStorage.setItem(localStorageDbKey, JSON.stringify(dbRaw));
+}
+
+(window as any).editDatabase =
+function editDatabase(editDb: (db: DatabaseRaw, history: DatabaseRaw[]) => DatabaseRaw) {
+  const { history, lastSaved } = getDbAndHistory();
+  
+  saveDatabaseRaw(editDb(lastSaved, history));
 }

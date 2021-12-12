@@ -165,6 +165,8 @@ app.component("export-popup", {
     <div>
       <p class="popup-title">Export</p>
       
+      <p><input type="checkbox" v-model="prettyPrint" /> Pretty print</p>
+      
       <p>Database (<a href @click.prevent="writeToClipboard(localStorageDb)">copy</a>):
       <textarea :value="localStorageDb" style="width: 100%; resize: vertical;" /></p>
       
@@ -178,15 +180,24 @@ app.component("export-popup", {
       required: true,
     },
   },
+  data() {
+    return {
+      prettyPrint: true,
+    };
+  },
   computed: {
     localStorageDb() {
-      return localStorage.getItem(localStorageDbKey);
+      const obj = JSON.parse(localStorage.getItem(localStorageDbKey)!);
+      
+      return JSON.stringify(obj, null, this.prettyPrint ? 2 : 0);
     },
     localStorageDbAndHistory() {
       const db = localStorage.getItem(localStorageDbKey);
       const history = localStorage.getItem(localStorageHistoryKey);
       
-      return `{"db":${db},"history":${history}}`;
+      const obj = JSON.parse(`{"db":${db},"history":${history}}`);
+      
+      return JSON.stringify(obj, null, this.prettyPrint ? 2 : 0);
     },
   },
   methods: {

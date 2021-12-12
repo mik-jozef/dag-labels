@@ -4,8 +4,11 @@ import { Database, Label, Text } from "./database.js";
 
 export const localStorageDbKey = "database";
 export const localStorageHistoryKey = "history";
+export const localStorageSHC = "saveHistoryCounter";
 
-const maxHistory = 1000;
+const saveHistoryEvery = 15;
+
+const maxHistory = 80;
 
 const validator = new Validator({
   database: new RObject({
@@ -138,6 +141,16 @@ export function importTexts(db: Database, raw: DatabaseRaw) {
         
         return;
       }
+      
+      for (const ancestorLabel of db.labels.get(labelName)!.ancestors) {
+        if (!rawText.labels.includes(ancestorLabel.name)) {
+          db.error = new ValidationError(
+            [ "texts", tIndex, "labels", lIndex ],
+            "ancestor labels to be present",
+            '"' + labelName + '" without its ancestor "' + ancestorLabel.name + '"',
+          );
+        }
+      }
     }
     
     db.texts.push(
@@ -193,11 +206,31 @@ function getDbAndHistory(): { history: any[], lastSaved: any } {
   };
 }
 
+function getSaveHistoryCounter() {
+  localStorage.getItem(localStorageSHC) === null && localStorage.setItem(localStorageSHC, '0');
+  
+  return +localStorage.getItem(localStorageSHC)!;
+};
+
+function incSaveHistoryCounter() {
+  localStorage.setItem(localStorageSHC, '' + (getSaveHistoryCounter() + 1));
+}
+
+function resetSaveHistoryCounter() {
+  localStorage.setItem(localStorageSHC, '0');
+}
+
 export function saveDatabaseRaw(dbRaw: DatabaseRaw) {
   const { history, lastSaved } = getDbAndHistory();
   
-  history.unshift(lastSaved);
-  maxHistory < history.length && (history.length = maxHistory);
+  if (getSaveHistoryCounter() < saveHistoryEvery) {
+    incSaveHistoryCounter();
+    history[0] = lastSaved;
+  } else {
+    resetSaveHistoryCounter();
+    history.unshift(lastSaved);
+    maxHistory < history.length && (history.length = maxHistory);
+  }
   
   localStorage.setItem(localStorageHistoryKey, JSON.stringify(history));
   localStorage.setItem(localStorageDbKey, JSON.stringify(dbRaw));

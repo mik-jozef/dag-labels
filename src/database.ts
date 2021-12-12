@@ -44,6 +44,13 @@ export class Text {
       labels: this.labels.map(label => label.name),
     };
   }
+  
+  toSeachObject() {
+    return {
+      id: this.id,
+      str: this.text + " " + this.date + " " + this.labels.map(l => l.name).join(" "),
+    };
+  }
 }
 
 export class Database {
@@ -113,6 +120,12 @@ export class Database {
       for (const anyLabel of this.labels.values()) {
         if (anyLabel.ancestors.includes(label)) {
           anyLabel.ancestors = [ ...new Set([ ...anyLabel.ancestors, ...label.ancestors ]) ];
+        }
+      }
+      
+      for (const anyText of this.texts.values()) {
+        if (anyText.labels.includes(label)) {
+          anyText.labels = [ ...new Set([ ...anyText.labels, ...label.ancestors ]) ];
         }
       }
     } else {

@@ -1,9 +1,12 @@
+import Fuse from 'https://cdn.jsdelivr.net/npm/fuse.js@6.4.6/dist/fuse.esm.js';
+
 import { Database, Label, Text } from "../database.js";
 import { ValidationError } from "../typecheck.js";
 import { localStorageDbKey, localStorageHistoryKey } from "../db-import.js";
 
 
 const minRandomBrightness = 150;
+const debounceTime = 400;
 
 function colorToRgb(arr: number[]): string {
   return `rgb(${arr.join(',')})`;
@@ -20,6 +23,13 @@ function getRandomColor() {
   
   return [ r, g, b ];
 }
+
+const fuseOptions = {
+  keys: [ "str" ],
+  findAllMatches: true,
+  ignoreLocation: true,
+  ignoreFieldNorm: true,
+};
 
 class Popup {
   static readonly dbError = new Popup("db-error");
@@ -44,7 +54,7 @@ const app = Vue.createApp({
         @popup="setPopup"
       />
       
-      <texts :texts="db.texts" @popup="setPopup" />
+      <texts :texts="db.texts" :selected="selectedTexts" @popup="setPopup" />
       
       <div v-if="popup"
         ref="popupTopDiv"
@@ -72,11 +82,15 @@ const app = Vue.createApp({
     </div>
   `,
   data() {
+    const db = new Database()
+    
     return {
-      db: new Database(),
+      db,
       selection: '',
       popup: null as Popup | null,
       popupArg: null as unknown,
+      selectedTexts: db.texts.map(e => e.id),
+      cancelSelectionUpdate: NaN,
     };
   },
   watch: {
@@ -89,6 +103,11 @@ const app = Vue.createApp({
       },
       immediate: true,
     },
+    selection() {
+      clearTimeout(this.cancelSelectionUpdate);
+      
+      this.cancelSelectionUpdate = setTimeout(() => this.updateSelectedTexts(), debounceTime);
+    },
   },
   methods: {
     setSelection(selection: string) {
@@ -97,6 +116,14 @@ const app = Vue.createApp({
     setPopup(popup: Popup, arg: unknown = null) {
       this.popup = popup;
       this.popupArg = arg;
+    },
+    updateSelectedTexts(): void {
+      if (this.selection === '') return this.db.texts.map(e => e.id);
+      
+      this.selectedTexts = new Fuse(
+        this.db.texts.map(text => text.toSeachObject()),
+        fuseOptions,
+      ).search(this.selection).map(e => e.item.id);
     },
   },
 });
@@ -179,9 +206,13 @@ app.component("create-edit-label", {
       <p>Color:<br /><input v-model="labelColor" :style="{ backgroundColor: colorToRgb(labelRaw.color) }"></p>
       <p>Description:<br />
       <textarea v-model="labelRaw.description" style="width: 100%; resize: vertical;" /></p>
+      
       <p>Ancestors:
       <template v-for="(ancestor, index) of labelRaw.ancestors">
-        <br /><input v-model="labelRaw.ancestors[index]" >
+        <br /><input
+          :ref="index + 2 === labelRaw.ancestors.length ? 'penultimateAncestorInput' : null"
+          v-model="labelRaw.ancestors[index]"
+        />
       </template></p>
       
       <p><input
@@ -253,9 +284,17 @@ app.component("create-edit-label", {
     },
     "labelRaw.ancestors": {
       handler(value: string[]) {
-        if (value[value.length - 1] !== "") this.labelRaw.ancestors.push("");
+        // TODO this code is shared with create-edit-text, should be refactored.
+        const ancestors = value.filter((a, i) => a !== "" || i + 1 === value.length);
         
-        if (value[value.length - 1] === "" && value[value.length - 2] === "") this.labelRaw.ancestors.pop();
+        const removedElements = ancestors.length !== value.length;
+        const lastNotEmpty = ancestors[ancestors.length - 1] !== "";
+        
+        lastNotEmpty && ancestors.push("");
+        
+        if (removedElements || lastNotEmpty) this.labelRaw.ancestors = ancestors;
+        
+        removedElements && this.$refs.penultimateAncestorInput.focus();
       },
       deep: true,
     },
@@ -287,10 +326,16 @@ app.component("create-edit-text", {
       <p v-if="!textToEdit" class="popup-title">Create a new note</p>
       <p v-else class="popup-title">Edit note</p>
       
-      <textarea v-model="text.text" style="width: 100%; height: 50%; resize: vertical;" />
+      <textarea v-model="textRaw.text" style="width: 100%; height: 50%; resize: vertical;" />
       <p>Labels:<br />
-      <input v-for="(ancestor, index) of text.labels" v-model="text.labels[index]" >
+      <input
+        v-for="(ancestor, index) of textRaw.labels"
+        v-model="textRaw.labels[index]"
+        :ref="index + 2 === textRaw.labels.length ? 'penultimateLabelInput' : null"
+      />
       </p>
+      
+      <p><input type="button" value="Fill in ancestor labels" @click="fillInLabels" /></p>
       
       <p><input
         type="button"
@@ -305,7 +350,7 @@ app.component("create-edit-text", {
     const textToEdit = this.arg;
     
     return {
-      text: {
+      textRaw: {
         date: textToEdit?.date || new Date().toJSON(),
         text: textToEdit?.text || "",
         labels: textToEdit ? [ ...textToEdit.labels.map(l => l.name), "" ] : [ "" ],
@@ -329,29 +374,51 @@ app.component("create-edit-text", {
     },
   },
   watch: {
-    "text.labels": {
+    "textRaw.labels": {
       handler(value: string[]) {
-        if (value[value.length - 1] !== "") this.text.labels.push("");
+        const labels = value.filter((a, i) => a !== "" || i + 1 === value.length);
         
-        if (value[value.length - 1] === "" && value[value.length - 2] === "") this.text.labels.pop();
+        const removedElements = labels.length !== value.length;
+        const lastNotEmpty = labels[labels.length - 1] !== "";
+        
+        lastNotEmpty && labels.push("");
+        
+        if (removedElements || lastNotEmpty) this.textRaw.labels = labels;
+        
+        removedElements && this.$refs.penultimateLabelInput.focus();
       },
       deep: true,
     },
   },
   methods: {
     createEditNote() {
-      this.textToEdit || (this.text.date = new Date().toJSON());
-      this.text.labels.pop();
+      this.textToEdit || (this.textRaw.date = new Date().toJSON());
+      this.textRaw.labels.pop();
       
-      const maybeError = this.db.createEditText(this.text, this.textToEdit);
+      const maybeError = this.db.createEditText(this.textRaw, this.textToEdit);
       
       if (maybeError) {
-        this.text.labels.push("");
+        this.textRaw.labels.push("");
         this.error = maybeError;
       } else {
         this.$emit('popup', null);
       }
-    }
+    },
+    fillInLabels() {
+      const labelsToAdd: string[] = [];
+      const currentLabelNames = this.textRaw.labels.filter(l => l);
+      
+      for (const labelName of currentLabelNames) {
+        const label = this.db.labels.get(labelName);
+        
+        label && label.ancestors.forEach(ancestor => labelsToAdd.push(ancestor.name));
+      }
+      
+      const expandedLabelNames = [ ...new Set([ ...this.textRaw.labels, ...labelsToAdd ]) ];
+      
+      currentLabelNames.length < expandedLabelNames.length
+        && (this.textRaw.labels = [ ...expandedLabelNames, "" ]);
+    },
   },
 });
 
@@ -446,7 +513,7 @@ app.component("texts", {
         padding-top: 7px;
       "
     >
-      <text-card v-for="text of texts" :text="text" @popup="setPopup" />
+      <text-card v-for="text of sortedTexts" :text="text" @popup="setPopup" />
       
       <p v-if="!texts.length" style="margin: 7px;">(No notes exist.)</p>
     </div>
@@ -455,6 +522,21 @@ app.component("texts", {
     texts: {
       type: Array as new() => Text[],
       required: true,
+    },
+    selected: {
+      type: Array as new() => number[],
+      required: true,
+    },
+  },
+  computed: {
+    sortedTexts() {
+      const texts = [];
+      
+      for (const id of this.selected) {
+        texts.push(this.texts[id]);
+      }
+      
+      return texts;
     },
   },
   methods: {
